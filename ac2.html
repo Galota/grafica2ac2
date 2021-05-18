@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+
+    <title>Babylon.js sample code</title>
+
+    <!-- Babylon.js -->
+    <script src="https://code.jquery.com/pep/0.4.2/pep.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dat-gui/0.6.2/dat.gui.min.js"></script>
+    <script src="https://preview.babylonjs.com/ammo.js"></script>
+    <script src="https://preview.babylonjs.com/cannon.js"></script>
+    <script src="https://preview.babylonjs.com/Oimo.js"></script>
+    <script src="https://preview.babylonjs.com/earcut.min.js"></script>
+    <script src="https://preview.babylonjs.com/babylon.js"></script>
+    <script src="https://preview.babylonjs.com/materialsLibrary/babylonjs.materials.min.js"></script>
+    <script src="https://preview.babylonjs.com/proceduralTexturesLibrary/babylonjs.proceduralTextures.min.js"></script>
+    <script src="https://preview.babylonjs.com/postProcessesLibrary/babylonjs.postProcess.min.js"></script>
+    <script src="https://preview.babylonjs.com/loaders/babylonjs.loaders.js"></script>
+    <script src="https://preview.babylonjs.com/serializers/babylonjs.serializers.min.js"></script>
+    <script src="https://preview.babylonjs.com/gui/babylon.gui.min.js"></script>
+    <script src="https://preview.babylonjs.com/inspector/babylon.inspector.bundle.js"></script>
+
+    <style>
+        html,
+        body {
+            overflow: hidden;
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+
+        #renderCanvas {
+            width: 100%;
+            height: 100%;
+            touch-action: none;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="renderCanvas"></canvas>
+    <script>
+
+        var canvas = document.getElementById("renderCanvas");
+
+        var engine = null;
+        var scene = null;
+        var sceneToRender = null;
+        var createDefaultEngine = function () { return new BABYLON.Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true, disableWebGL2Support: false }); };
+        var scene;
+        var notes = new Map();
+
+        var createScene = function () {
+            engine.enableOfflineSupport = false;
+
+            // Scene and Camera
+            var scene = new BABYLON.Scene(engine);
+
+            var camera1 = new BABYLON.ArcRotateCamera("camera1", Math.PI / 2, Math.PI / 4, 10, new BABYLON.Vector3(0, 100, 100), scene);
+            scene.activeCamera = camera1;
+            scene.activeCamera.attachControl(canvas, true);
+            camera1.lowerRadiusLimit = 2;
+            camera1.upperRadiusLimit = 10;
+            camera1.wheelDeltaPercentage = 0.01;
+
+            var importar = new MeshImporter();
+            importar.createAviao(scene, 10, -10, 12);
+            importar.createTorre(scene,20,30,45);
+            importar.createVentilador(scene,-20,50,5);
+            importar.createSistema(scene,80,-25,20);
+            importar.createDragao(scene,-15,0,7);
+            importar.createCasa(scene,0,-10,7.7);
+            importar.createUFO(scene, 35, -10, 5);
+            importar.createUFO(scene, 0, 55, 10);
+            importar.createUFO(scene, -35, -10, 15);
+
+            // Lights
+            var light = new BABYLON.HemisphericLight("light1", new BABYLON.Vector3(0, 1, 0), scene);
+            light.intensity = 0.6;
+            light.specular = BABYLON.Color3.Black();
+
+            var light2 = new BABYLON.DirectionalLight("dir01", new BABYLON.Vector3(0, -0.5, -1.0), scene);
+            light2.position = new BABYLON.Vector3(0, 5, 5);
+
+            //large ground
+            const largeGroundMat = new BABYLON.StandardMaterial("largeGroundMat");
+            largeGroundMat.diffuseTexture = new BABYLON.Texture("./textures/grama.jpg");
+
+            const largeGround = BABYLON.MeshBuilder.CreateGroundFromHeightMap("largeGround", "./textures/ground.png", {width:150, height:150, subdivisions: 10, minHeight:0, maxHeight: 10});
+            largeGround.material = largeGroundMat;
+            largeGround.position.y = -0.01;
+
+            var dome = new BABYLON.PhotoDome(
+                "testdome",
+                "./textures/skybox.jpg",
+                {
+                    resolution: 32,
+                    size: 1000
+                },
+                scene
+            );
+            
+            // GUI
+            var advancedTexture = BABYLON.GUI.AdvancedDynamicTexture.CreateFullscreenUI("UI");
+            var instructions = new BABYLON.GUI.TextBlock();
+            instructions.text = "Gal Bronstein 160870 | Gabriel Azevedo 180611";
+            instructions.color = "white";
+            instructions.fontSize = 24;
+            instructions.textHorizontalAlignment = BABYLON.GUI.Control.HORIZONTAL_ALIGNMENT_RIGHT
+            instructions.textVerticalAlignment = BABYLON.GUI.Control.VERTICAL_ALIGNMENT_BOTTOM
+            advancedTexture.addControl(instructions);
+            
+            // Keyboard events
+            var inputMap = {};
+            scene.actionManager = new BABYLON.ActionManager(scene);
+            scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyDownTrigger, function (evt) {
+                inputMap[evt.sourceEvent.key] = evt.sourceEvent.type == "keydown";
+            }));
+            scene.actionManager.registerAction(new BABYLON.ExecuteCodeAction(BABYLON.ActionManager.OnKeyUpTrigger, function (evt) {
+                inputMap[evt.sourceEvent.key] = evt.sourceEvent.type == "keydown";
+            }));
+
+            // Load hero character
+            BABYLON.SceneLoader.ImportMesh("", "https://assets.babylonjs.com/meshes/", "HVGirl.glb", scene, function (newMeshes, particleSystems, skeletons, animationGroups) {
+                var hero = newMeshes[0];
+
+                //Scale the model down        
+                hero.scaling.scaleInPlace(0.15);
+                hero.position.y = 7.65;
+
+                //Lock camera on the character 
+                camera1.target = hero;
+
+                //Hero character variables 
+                var heroSpeed = 0.06;
+                var heroSpeedBackwards = 0.03;
+                var heroRotationSpeed = 0.1;
+
+                var animating = true;
+
+                const walkAnim = scene.getAnimationGroupByName("Walking");
+                const walkBackAnim = scene.getAnimationGroupByName("WalkingBack");
+                const idleAnim = scene.getAnimationGroupByName("Idle");
+                const sambaAnim = scene.getAnimationGroupByName("Samba");
+
+                //Rendering loop (executed for everyframe)
+                scene.onBeforeRenderObservable.add(() => {
+                    var keydown = false;
+                    //Manage the movements of the character (e.g. position, direction)
+                    if (inputMap["w"]) {
+                        hero.moveWithCollisions(hero.forward.scaleInPlace(heroSpeed));
+                        keydown = true;
+                    }
+                    if (inputMap["s"]) {
+                        hero.moveWithCollisions(hero.forward.scaleInPlace(-heroSpeedBackwards));
+                        keydown = true;
+                    }
+                    if (inputMap["a"]) {
+                        hero.rotate(BABYLON.Vector3.Up(), -heroRotationSpeed);
+                        keydown = true;
+                    }
+                    if (inputMap["d"]) {
+                        hero.rotate(BABYLON.Vector3.Up(), heroRotationSpeed);
+                        keydown = true;
+                    }
+                    if (inputMap["b"]) {
+                        keydown = true;
+                    }
+
+                    //Manage animations to be played  
+                    if (keydown) {
+                        if (!animating) {
+                            animating = true;
+                            if (inputMap["s"]) {
+                                //Walk backwards
+                                walkBackAnim.start(true, 1.0, walkBackAnim.from, walkBackAnim.to, false);
+                            }
+                            else if
+                                (inputMap["b"]) {
+                                //Samba!
+                                sambaAnim.start(true, 1.0, sambaAnim.from, sambaAnim.to, false);
+                            }
+                            else {
+                                //Walk
+                                walkAnim.start(true, 1.0, walkAnim.from, walkAnim.to, false);
+                            }
+                        }
+                    }
+                    else {
+
+                        if (animating) {
+                            //Default animation is idle when no key is down     
+                            idleAnim.start(true, 1.0, idleAnim.from, idleAnim.to, false);
+
+                            //Stop all animations besides Idle Anim when no key is down
+                            sambaAnim.stop();
+                            walkAnim.stop();
+                            walkBackAnim.stop();
+
+                            //Ensure animation are played only once per rendering loop
+                            animating = false;
+                        }
+                    }
+                });
+            });
+
+            return scene;
+        };
+
+        class MeshImporter{
+
+            createAviao(scene, x, z, y){
+                BABYLON.SceneLoader.ImportMesh("", "https://models.babylonjs.com/", "aerobatic_plane.glb", scene, function (meshes) {
+                    var aviao = meshes[0];
+                    aviao.scaling.scaleInPlace(20);
+                    aviao.position.x = x;
+                    aviao.position.y = y;
+                    aviao.position.z = z;
+
+                });
+            }
+
+            createUFO(scene, x, z, y) {
+                BABYLON.SceneLoader.ImportMesh("", "https://models.babylonjs.com/", "ufo.glb", scene, function (meshes) {
+                    var ufo = meshes[0];
+                    ufo.scaling.scaleInPlace(8);
+                    ufo.position.x = x;
+                    ufo.position.y = y;
+                    ufo.position.z = z;
+
+                });
+            }
+
+            createCasa(scene, x, z, y) {
+                BABYLON.SceneLoader.ImportMesh("", "https://models.babylonjs.com/", "haunted_house.glb", scene, function (meshes) {
+                    var casa = meshes[0];
+                    casa.scaling.scaleInPlace(50);
+                    casa.position.x = x;
+                    casa.position.y = y;
+                    casa.position.z = z;
+                });
+            }
+
+            createTorre(scene, x, z, y) {
+                BABYLON.SceneLoader.ImportMesh('', "https://models.babylonjs.com/Marble/marbleTower/", "marbleTower.gltf", scene, function (meshes) {
+                    var torre = meshes[0];
+                    torre.scaling.scaleInPlace(1);
+                    torre.position.x = x;
+                    torre.position.y = y;
+                    torre.position.z = z;
+                });
+            }
+
+            createVentilador(scene, x, z, y) {
+                BABYLON.SceneLoader.ImportMesh("", "https://models.babylonjs.com/vintageDeskFan/", "vintageFan_animated.gltf", scene, function (meshes) {
+                    var ventilador = meshes[0];
+                    ventilador.scaling.scaleInPlace(0.5);
+                    ventilador.position.x = x;
+                    ventilador.position.y = y;
+                    ventilador.position.z = z;
+                    ventilador.rotate(BABYLON.Axis.Y, 3 * Math.PI / 4, BABYLON.Space.WORLD);
+                });
+            }
+
+            createSistema(scene, x, z, y) {
+                BABYLON.SceneLoader.ImportMesh("", "https://models.babylonjs.com/", "solar_system.glb", scene, function (meshes) {
+                    var sistema = meshes[0];
+                    sistema.scaling.scaleInPlace(5);
+                    sistema.position.x = x;
+                    sistema.position.y = y;
+                    sistema.position.z = z;
+                });
+            }
+
+            createDragao(scene, x, z, y) {
+                BABYLON.SceneLoader.ImportMesh("", "https://models.babylonjs.com/Georgia-Tech-Dragon/", "dragon.babylon", scene, function (meshes) {
+                    var dragao = meshes[0];
+                    dragao.scaling.scaleInPlace(50);
+                    dragao.position.x = x;
+                    dragao.position.y = y;
+                    dragao.position.z = z;
+                    dragao.rotate(BABYLON.Axis.Y, Math.PI, BABYLON.Space.WORLD);
+                });
+            }
+        }
+
+
+        initFunction = async function () {
+            var asyncEngineCreation = async function () {
+                try {
+                    return createDefaultEngine();
+                } catch (e) {
+                    console.log("the available createEngine function failed. Creating the default engine instead");
+                    return createDefaultEngine();
+                }
+            }
+
+            engine = await asyncEngineCreation();
+            if (!engine) throw 'engine should not be null.';
+            scene = createScene();
+        };
+        initFunction().then(() => {
+            sceneToRender = scene
+            engine.runRenderLoop(function () {
+                if (sceneToRender && sceneToRender.activeCamera) {
+                    sceneToRender.render();
+                }
+            });
+        });
+
+        // Resize
+        window.addEventListener("resize", function () {
+            engine.resize();
+        });
+
+
+    </script>
+</body>
+
+</html>
